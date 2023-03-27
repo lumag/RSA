@@ -23,6 +23,18 @@ use signature::{
 };
 use subtle::ConstantTimeEq;
 
+#[cfg(feature = "algorithm-identifier")]
+use const_oid::{AssociatedOid, ObjectIdentifier};
+#[cfg(feature = "algorithm-identifier")]
+use pkcs1::RsaPssParams;
+#[cfg(feature = "algorithm-identifier")]
+use pkcs8::der::{Decode, Encode};
+#[cfg(feature = "algorithm-identifier")]
+use pkcs8::spki::{
+    der::AnyRef, AlgorithmIdentifier, AlgorithmIdentifierOwned, AlgorithmIdentifierRef,
+    AssociatedAlgorithmIdentifier, DynSignatureAlgorithmIdentifier,
+};
+
 use crate::algorithms::{mgf1_xor, mgf1_xor_digest};
 use crate::errors::{Error, Result};
 use crate::key::{PrivateKey, PublicKey};
@@ -689,6 +701,64 @@ where
     }
 }
 
+#[cfg(feature = "algorithm-identifier")]
+fn get_pss_signature_algo_id<D>(salt_len: Option<usize>) -> AlgorithmIdentifierOwned
+where
+    D: Digest + AssociatedOid,
+{
+    const ID_MGF_1: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.8");
+    const ID_RSASSA_PSS: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.10");
+
+    let salt_len = salt_len.map_or(RsaPssParams::SALT_LEN_DEFAULT, |l| l as u8);
+
+    /*
+     * We do not expect that any of this functions fails, unless the library is broken, so it
+     * is safe to use unwrap()
+     */
+    let pss_params = RsaPssParams {
+        hash: AlgorithmIdentifierRef {
+            oid: D::OID,
+            parameters: None,
+        },
+        mask_gen: AlgorithmIdentifier {
+            oid: ID_MGF_1,
+            parameters: Some(AlgorithmIdentifierRef {
+                oid: D::OID,
+                parameters: None,
+            }),
+        },
+        salt_len,
+        trailer_field: Default::default(),
+    }
+    .to_der()
+    .unwrap();
+
+    AlgorithmIdentifierOwned {
+        oid: ID_RSASSA_PSS,
+        parameters: Some(pkcs8::der::Any::from_der(&pss_params).unwrap()),
+    }
+}
+
+#[cfg(feature = "algorithm-identifier")]
+impl<D> AssociatedAlgorithmIdentifier for SigningKey<D>
+where
+    D: Digest,
+{
+    type Params = AnyRef<'static>;
+
+    const ALGORITHM_IDENTIFIER: AlgorithmIdentifierRef<'static> = pkcs1::ALGORITHM_ID;
+}
+
+#[cfg(feature = "algorithm-identifier")]
+impl<D> DynSignatureAlgorithmIdentifier for SigningKey<D>
+where
+    D: Digest + AssociatedOid,
+{
+    fn signature_algorithm_identifier(&self) -> AlgorithmIdentifierOwned {
+        get_pss_signature_algo_id::<D>(self.salt_len)
+    }
+}
+
 impl<D> From<RsaPrivateKey> for SigningKey<D>
 where
     D: Digest,
@@ -825,6 +895,26 @@ where
     }
 }
 
+#[cfg(feature = "algorithm-identifier")]
+impl<D> AssociatedAlgorithmIdentifier for BlindedSigningKey<D>
+where
+    D: Digest,
+{
+    type Params = AnyRef<'static>;
+
+    const ALGORITHM_IDENTIFIER: AlgorithmIdentifierRef<'static> = pkcs1::ALGORITHM_ID;
+}
+
+#[cfg(feature = "algorithm-identifier")]
+impl<D> DynSignatureAlgorithmIdentifier for BlindedSigningKey<D>
+where
+    D: Digest + AssociatedOid,
+{
+    fn signature_algorithm_identifier(&self) -> AlgorithmIdentifierOwned {
+        get_pss_signature_algo_id::<D>(self.salt_len)
+    }
+}
+
 impl<D> From<RsaPrivateKey> for BlindedSigningKey<D>
 where
     D: Digest,
@@ -956,6 +1046,16 @@ where
             phantom: Default::default(),
         }
     }
+}
+
+#[cfg(feature = "algorithm-identifier")]
+impl<D> AssociatedAlgorithmIdentifier for VerifyingKey<D>
+where
+    D: Digest,
+{
+    type Params = AnyRef<'static>;
+
+    const ALGORITHM_IDENTIFIER: AlgorithmIdentifierRef<'static> = pkcs1::ALGORITHM_ID;
 }
 
 impl<D> From<RsaPublicKey> for VerifyingKey<D>

@@ -21,6 +21,9 @@ use signature::{
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 use zeroize::Zeroizing;
 
+#[cfg(feature = "algorithm-identifier")]
+use pkcs8::spki::{der::AnyRef, AlgorithmIdentifierRef, AssociatedAlgorithmIdentifier};
+
 use crate::dummy_rng::DummyRng;
 use crate::errors::{Error, Result};
 use crate::key::{self, PrivateKey, PublicKey};
@@ -436,6 +439,16 @@ where
     }
 }
 
+#[cfg(feature = "algorithm-identifier")]
+impl<D> AssociatedAlgorithmIdentifier for SigningKey<D>
+where
+    D: Digest,
+{
+    type Params = AnyRef<'static>;
+
+    const ALGORITHM_IDENTIFIER: AlgorithmIdentifierRef<'static> = pkcs1::ALGORITHM_ID;
+}
+
 impl<D> From<RsaPrivateKey> for SigningKey<D>
 where
     D: Digest,
@@ -604,6 +617,16 @@ where
             phantom: Default::default(),
         }
     }
+}
+
+#[cfg(feature = "algorithm-identifier")]
+impl<D> AssociatedAlgorithmIdentifier for VerifyingKey<D>
+where
+    D: Digest,
+{
+    type Params = AnyRef<'static>;
+
+    const ALGORITHM_IDENTIFIER: AlgorithmIdentifierRef<'static> = pkcs1::ALGORITHM_ID;
 }
 
 impl<D> From<RsaPublicKey> for VerifyingKey<D>
