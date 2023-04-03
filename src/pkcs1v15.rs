@@ -22,7 +22,13 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq};
 use zeroize::Zeroizing;
 
 #[cfg(feature = "algorithm-identifier")]
-use pkcs8::spki::{der::AnyRef, AlgorithmIdentifierRef, AssociatedAlgorithmIdentifier};
+use const_oid::{db::rfc5912, ObjectIdentifier};
+#[cfg(feature = "algorithm-identifier")]
+use pkcs8::spki::{
+    der::{referenced::RefToOwned, AnyRef},
+    AlgorithmIdentifierOwned, AlgorithmIdentifierRef, AssociatedAlgorithmIdentifier,
+    DynSignatureAlgorithmIdentifier,
+};
 
 use crate::dummy_rng::DummyRng;
 use crate::errors::{Error, Result};
@@ -729,6 +735,42 @@ where
 {
     fn to_public_key_der(&self) -> pkcs8::spki::Result<Document> {
         self.inner.to_public_key_der()
+    }
+}
+
+#[cfg(feature = "algorithm-identifier")]
+impl<D> DynSignatureAlgorithmIdentifier for VerifyingKey<D>
+where
+    D: Digest + AssociatedOid,
+{
+    fn signature_algorithm_identifier(&self) -> AlgorithmIdentifierOwned {
+        AlgorithmIdentifierOwned {
+            oid: match pkcs1v15_oid_for_digest(D::OID) {
+                Some(oid) => oid,
+                None => panic!("no RFC5754 RSA OID defined for Digest"),
+            },
+            parameters: Some(AnyRef::NULL.ref_to_owned()),
+        }
+    }
+}
+
+#[cfg(feature = "algorithm-identifier")]
+const SHA224_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.16.840.1.101.3.4.2.4");
+#[cfg(feature = "algorithm-identifier")]
+const SHA256_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.16.840.1.101.3.4.2.1");
+#[cfg(feature = "algorithm-identifier")]
+const SHA384_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.16.840.1.101.3.4.2.2");
+#[cfg(feature = "algorithm-identifier")]
+const SHA512_OID: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.16.840.1.101.3.4.2.3");
+
+#[cfg(feature = "algorithm-identifier")]
+const fn pkcs1v15_oid_for_digest(digest_oid: ObjectIdentifier) -> Option<ObjectIdentifier> {
+    match digest_oid {
+        SHA224_OID => Some(rfc5912::SHA_224_WITH_RSA_ENCRYPTION),
+        SHA256_OID => Some(rfc5912::SHA_256_WITH_RSA_ENCRYPTION),
+        SHA384_OID => Some(rfc5912::SHA_384_WITH_RSA_ENCRYPTION),
+        SHA512_OID => Some(rfc5912::SHA_512_WITH_RSA_ENCRYPTION),
+        _ => None,
     }
 }
 
